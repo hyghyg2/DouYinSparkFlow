@@ -253,6 +253,7 @@ const app = createApp({
         deployResult.value = "正在写入环境变量...";
         const vars = environmentVariables.value;
         for (const [name, value] of Object.entries(vars)) {
+          if (name === "PROXY_ADDRESS" && !value) continue;
           await setVariable(name, value);
         }
 
@@ -367,3 +368,4 @@ const app = createApp({
 });
 app.use(ElementPlus);
 app.mount("#app");
+
