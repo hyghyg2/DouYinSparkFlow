@@ -102,7 +102,16 @@ const app = createApp({
       return await resp.json();
     }
 
-    async function setVariable(name, value) {
+    async function loadCookiesFromCloud() {
+      try {
+        const resp = await fetch(`${envBase()}/variables/COOKIES_BACKUP`, { headers: getApiHeaders() });
+        if (!resp.ok) return {};
+        const data = await resp.json();
+        return JSON.parse(data.value || "{}");
+      } catch (e) { return {}; }
+    }
+
+    const setVariable = async (name, value) => {
       const val = typeof value === "object" ? JSON.stringify(value) : String(value);
       const resp = await fetch(`${envBase()}/variables/${name}`, {
         method: "PUT",
@@ -154,7 +163,10 @@ const app = createApp({
       deployResult.value = "";
       try {
         deployResult.value = "正在加载配置...";
-        const resp = await fetch(`${envBase()}/variables`, { headers: getApiHeaders() });
+        const [resp, cloudCookies] = await Promise.all([
+          fetch(`${envBase()}/variables`, { headers: getApiHeaders() }),
+          loadCookiesFromCloud(),
+        ]);
         if (!resp.ok) throw new Error(`加载失败 (${resp.status})`);
         const data = await resp.json();
         for (const v of data.variables || []) {
@@ -166,12 +178,15 @@ const app = createApp({
             val = parseInt(val) || val;
           }
           if (v.name === "TASKS") {
-            form.ACCOUNTS = (val || []).map(t => ({
-              username: t.username || "",
-              unique_id: t.unique_id || "",
-              cookies: "",
-              targets: t.targets || [],
-            }));
+            form.ACCOUNTS = (val || []).map(t => {
+              const uid = t.unique_id || "";
+              return {
+                username: t.username || "",
+                unique_id: uid,
+                cookies: localStorage.getItem("cookies_" + uid) || cloudCookies[uid] || "",
+                targets: t.targets || [],
+              };
+            });
             continue;
           }
           if (v.name in form) form[v.name] = val;
@@ -235,6 +250,14 @@ const app = createApp({
         }
 
         deployResult.value = "正在写入密钥...";
+        const cookiesBackup = {};
+        form.ACCOUNTS.forEach(a => {
+          if (a.unique_id && a.cookies) {
+            localStorage.setItem("cookies_" + a.unique_id, a.cookies);
+            cookiesBackup[a.unique_id] = a.cookies;
+          }
+        });
+        await setVariable("COOKIES_BACKUP", JSON.stringify(cookiesBackup));
         const secrets = environmentSecrets.value;
         for (const [name, value] of Object.entries(secrets)) {
           await setSecret(name, value, publicKey);
