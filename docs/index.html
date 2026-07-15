@@ -13,6 +13,7 @@
     <script src="./static/js/vue.global.js"></script>
     <!-- 导入组件库 -->
     <script src="./static/js/element-plus.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.13/dist/browsers/combined/sodium.min.js"></script>
 </head>
 
 <body>
@@ -148,6 +149,29 @@
                 </el-aside>
                 <el-main>
                     <div class="main">
+                        <div class="github-config-form">
+                            <div class="section-header">
+                                <span class="text-large font-600">GitHub 部署配置</span>
+                            </div>
+                            <el-form :model="githubForm" label-width="auto" style="max-width: 600px">
+                                <el-form-item label="仓库所有者">
+                                    <el-input v-model="githubForm.owner" placeholder="如 hyghyg2" />
+                                </el-form-item>
+                                <el-form-item label="仓库名">
+                                    <el-input v-model="githubForm.repo" placeholder="DouYinSparkFlow" />
+                                </el-form-item>
+                                <el-form-item label="GitHub Token">
+                                    <el-input v-model="githubForm.token" type="password" show-password placeholder="ghp_xxxx">
+                                        <template #append>
+                                            <el-button @click="openTokenHelp">?</el-button>
+                                        </template>
+                                    </el-input>
+                                    <template #extra>
+                                        <span style="font-size:12px;color:#909399">需要 workflow 权限，<a href="https://github.com/settings/tokens/new?scopes=workflow" target="_blank">点此创建</a></span>
+                                    </template>
+                                </el-form-item>
+                            </el-form>
+                        </div>
                         <div class="base-config-form">
                             <div class="section-header">
                                 <span class="text-large font-600">基础配置</span>
@@ -226,6 +250,15 @@
 
                             </div>
                             <div class="action">
+                                <el-button type="success" style="width: 80%; margin: 20px auto;" @click="deployAndRun" :loading="deploying">
+                                    <template #icon>
+                                        <i class="icon"><svg t="1775401233918" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="16333" width="256" height="256">
+                                            <path d="M960 512L128 960V64z" fill="#ffffff" p-id="17000"></path>
+                                        </svg></i>
+                                    </template>
+                                    {{ deploying ? '部署运行中...' : '一键部署并运行' }}
+                                </el-button>
+                                <el-alert v-if="deployResult" :title="deployResult" :type="deployStatus" show-icon :closable="false" style="margin-top:12px" />
                                 <el-button type="primary" style="width: 80%; margin: 20px auto;" @click="addAccount">
                                     <template #icon>
                                         <i class="icon"><svg t="1775401233918" class="icon" viewBox="0 0 1024 1024"
