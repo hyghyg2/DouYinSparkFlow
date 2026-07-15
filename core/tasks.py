@@ -248,6 +248,7 @@ def do_user_task(browser, username, cookies, targets):
         # 滚动并选择用户
         for username in scroll_and_select_user(page, username, targets):
             logger.debug(f"账号 {username} 已选中好友 {username} 发送消息")
+            time.sleep(1.5)  # 等待聊天窗口加载
             # 等待聊天输入框元素加载完成，使用更稳定的属性选择器
             chat_input_selector = "xpath=//div[contains(@class, 'chat-input-')]"
             page.wait_for_selector(chat_input_selector, timeout=config["browserTimeout"])
