@@ -41,6 +41,8 @@ const app = createApp({
     });
 
     const deploying = ref(false);
+    const loadingConfig = ref(false);
+    const running = ref(false);
     const deployResult = ref("");
     const deployStatus = ref("success");
 
@@ -141,6 +143,71 @@ const app = createApp({
         throw new Error(`触发运行失败 (${resp.status}): ${body}`);
       }
     }
+
+    const loadFromGitHub = async () => {
+      if (!githubForm.owner || !githubForm.repo || !githubForm.token) {
+        deployResult.value = "请先填写 GitHub 仓库所有者、仓库名和 Token";
+        deployStatus.value = "warning";
+        return;
+      }
+      loadingConfig.value = true;
+      deployResult.value = "";
+      try {
+        deployResult.value = "正在加载配置...";
+        const resp = await fetch(`${envBase()}/variables`, { headers: getApiHeaders() });
+        if (!resp.ok) throw new Error(`加载失败 (${resp.status})`);
+        const data = await resp.json();
+        for (const v of data.variables || []) {
+          let val = v.value;
+          if (v.name === "HITOKOTO_TYPES" || v.name === "TASKS") {
+            try { val = JSON.parse(val); } catch(e) {}
+          }
+          if (v.name === "BROWSER_TIMEOUT" || v.name === "FRIEND_LIST_WAIT_TIME" || v.name === "TASK_RETRY_TIMES") {
+            val = parseInt(val) || val;
+          }
+          if (v.name === "TASKS") {
+            form.ACCOUNTS = (val || []).map(t => ({
+              username: t.username || "",
+              unique_id: t.unique_id || "",
+              cookies: "",
+              targets: t.targets || [],
+            }));
+            continue;
+          }
+          if (v.name in form) form[v.name] = val;
+        }
+        deployStatus.value = "success";
+        deployResult.value = "配置已加载！Cookies 需手动填写（GitHub 不返回密钥值）。";
+        ElementPlus.ElMessage.success("配置加载完成");
+      } catch (e) {
+        deployStatus.value = "error";
+        deployResult.value = e.message || "加载失败";
+      } finally {
+        loadingConfig.value = false;
+      }
+    };
+
+    const triggerRun = async () => {
+      if (!githubForm.owner || !githubForm.repo || !githubForm.token) {
+        deployResult.value = "请先填写 GitHub 仓库所有者、仓库名和 Token";
+        deployStatus.value = "warning";
+        return;
+      }
+      running.value = true;
+      deployResult.value = "";
+      try {
+        deployResult.value = "正在触发运行...";
+        await triggerWorkflow();
+        deployStatus.value = "success";
+        deployResult.value = "运行已触发！请稍后在 GitHub Actions 中查看结果。";
+        ElementPlus.ElMessage.success("运行已触发");
+      } catch (e) {
+        deployStatus.value = "error";
+        deployResult.value = e.message || "触发失败";
+      } finally {
+        running.value = false;
+      }
+    };
 
     const deployAndRun = async () => {
       if (!githubForm.owner || !githubForm.repo || !githubForm.token) {
@@ -260,6 +327,10 @@ const app = createApp({
       addAccount,
       removeAccount,
       deployAndRun,
+      loadFromGitHub,
+      triggerRun,
+      loadingConfig,
+      running,
       openTokenHelp,
     };
   },
