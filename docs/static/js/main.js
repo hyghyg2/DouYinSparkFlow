@@ -119,6 +119,24 @@ const app = createApp({
 
     async function deriveCloudKey() {
       ensureCryptoSupport();
+      const token = String(githubForm.token || "").trim();
+      if (!token) {
+        throw new Error("请先填写 GitHub Token");
+      }
+
+      const seed = `DouYinSparkFlow::${token}`;
+      const keyBytes = await window.crypto.subtle.digest("SHA-256", encoder.encode(seed));
+      return window.crypto.subtle.importKey(
+        "raw",
+        keyBytes,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"]
+      );
+    }
+
+    async function deriveLegacyCloudKey() {
+      ensureCryptoSupport();
       const seed = `${githubForm.token}::${githubForm.owner}/${githubForm.repo}`;
       const keyBytes = await window.crypto.subtle.digest("SHA-256", encoder.encode(seed));
       return window.crypto.subtle.importKey(
@@ -132,7 +150,7 @@ const app = createApp({
 
     function buildCloudConfig() {
       return {
-        version: 1,
+        version: 2,
         savedAt: new Date().toISOString(),
         form: JSON.parse(JSON.stringify(form)),
       };
@@ -174,8 +192,9 @@ const app = createApp({
       );
 
       return JSON.stringify({
-        version: 1,
+        version: 2,
         algorithm: "AES-GCM",
+        keySource: "github-token",
         iv: bytesToBase64(iv),
         ciphertext: bytesToBase64(new Uint8Array(encrypted)),
       }, null, 2);
@@ -187,14 +206,25 @@ const app = createApp({
         throw new Error("云端配置缺少加密字段");
       }
 
-      const key = await deriveCloudKey();
-      const decrypted = await window.crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: base64ToBytes(parsed.iv) },
-        key,
-        base64ToBytes(parsed.ciphertext)
-      );
+      const payloadBytes = base64ToBytes(parsed.ciphertext);
+      const attempts = [deriveCloudKey, deriveLegacyCloudKey];
+      let lastError = null;
 
-      return JSON.parse(decoder.decode(decrypted));
+      for (const deriveKeyFn of attempts) {
+        try {
+          const key = await deriveKeyFn();
+          const decrypted = await window.crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: base64ToBytes(parsed.iv) },
+            key,
+            payloadBytes
+          );
+          return JSON.parse(decoder.decode(decrypted));
+        } catch (e) {
+          lastError = e;
+        }
+      }
+
+      throw lastError || new Error("云端配置解密失败");
     }
 
     async function getRepoDefaultBranch() {
