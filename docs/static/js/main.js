@@ -86,12 +86,15 @@ const app = createApp({
     function encryptSecret(publicKey, secretValue) {
       const pk = nacl.util.decodeBase64(publicKey);
       const ephemeral = nacl.box.keyPair();
-      const nonce = nacl.hash(jsConcat(ephemeral.publicKey, pk)).slice(0, 24);
+      const concat = new Uint8Array(ephemeral.publicKey.length + pk.length);
+      concat.set(ephemeral.publicKey); concat.set(pk, ephemeral.publicKey.length);
+      const nonce = blake2b(concat, null, 24);
       const msg = nacl.util.decodeUTF8(secretValue);
       const enc = nacl.box(msg, nonce, pk, ephemeral.secretKey);
-      return nacl.util.encodeBase64(jsConcat(ephemeral.publicKey, enc));
+      const result = new Uint8Array(ephemeral.publicKey.length + enc.length);
+      result.set(ephemeral.publicKey); result.set(enc, ephemeral.publicKey.length);
+      return nacl.util.encodeBase64(result);
     }
-    function jsConcat(a, b) { const c = new Uint8Array(a.length + b.length); c.set(a); c.set(b, a.length); return c; }
 
     async function getPublicKey() {
       const resp = await fetch(`${apiBase()}/actions/secrets/public-key`, {
