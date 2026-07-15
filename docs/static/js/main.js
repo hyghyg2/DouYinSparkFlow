@@ -270,10 +270,8 @@ const app = createApp({
             cookiesBackup[a.unique_id] = a.cookies;
           }
         });
-        await setVariable("COOKIES_BACKUP", JSON.stringify(cookiesBackup));
-        const secrets = environmentSecrets.value;
-        for (const [name, value] of Object.entries(secrets)) {
-          await setSecret(name, value, publicKey);
+        if (Object.keys(cookiesBackup).length > 0) {
+          await setVariable("COOKIES_BACKUP", JSON.stringify(cookiesBackup));
         }
 
         deployResult.value = "正在触发运行...";
