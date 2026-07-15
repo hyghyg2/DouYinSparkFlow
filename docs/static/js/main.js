@@ -113,11 +113,18 @@ const app = createApp({
 
     const setVariable = async (name, value) => {
       const val = typeof value === "object" ? JSON.stringify(value) : String(value);
-      const resp = await fetch(`${envBase()}/variables/${name}`, {
-        method: "PUT",
+      let resp = await fetch(`${envBase()}/variables/${name}`, {
+        method: "PATCH",
         headers: getApiHeaders(),
         body: JSON.stringify({ name, value: val }),
       });
+      if (resp.status === 404) {
+        resp = await fetch(`${envBase()}/variables`, {
+          method: "POST",
+          headers: getApiHeaders(),
+          body: JSON.stringify({ name, value: val }),
+        });
+      }
       if (!resp.ok) {
         const body = await resp.text();
         throw new Error(`设置变量 ${name} 失败 (${resp.status}): ${body}`);
