@@ -1,6 +1,9 @@
 const { createApp, ref, reactive, computed } = Vue;
 const app = createApp({
   setup() {
+    const CLOUD_CONFIG_PATH = "cloud-config/user-data.enc.json";
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
     const message = ref("Hello vue!");
 
     const match_mode_options = [
@@ -41,6 +44,7 @@ const app = createApp({
     });
 
     const deploying = ref(false);
+    const savingCloud = ref(false);
     const loadingConfig = ref(false);
     const running = ref(false);
     const deployResult = ref("");
@@ -83,28 +87,185 @@ const app = createApp({
 
     const envBase = () => `${apiBase()}/environments/user-data`;
 
-    function encryptSecret(publicKey, secretValue) {
-      const pk = nacl.util.decodeBase64(publicKey);
-      const ephemeral = nacl.box.keyPair();
-      const concat = new Uint8Array(ephemeral.publicKey.length + pk.length);
-      concat.set(ephemeral.publicKey); concat.set(pk, ephemeral.publicKey.length);
-      const nonce = blake2b(concat, null, 24);
-      const msg = nacl.util.decodeUTF8(secretValue);
-      const enc = nacl.box(msg, nonce, pk, ephemeral.secretKey);
-      const result = new Uint8Array(ephemeral.publicKey.length + enc.length);
-      result.set(ephemeral.publicKey); result.set(enc, ephemeral.publicKey.length);
-      return nacl.util.encodeBase64(result);
+    const chunkStringFromBytes = (bytes) => {
+      const chunkSize = 0x8000;
+      let result = "";
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        result += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      return result;
+    };
+
+    const bytesToBase64 = (bytes) => btoa(chunkStringFromBytes(bytes));
+
+    const base64ToBytes = (base64) => {
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes;
+    };
+
+    const utf8ToBase64 = (value) => bytesToBase64(encoder.encode(value));
+
+    const base64ToUtf8 = (value) => decoder.decode(base64ToBytes(value));
+
+    const ensureCryptoSupport = () => {
+      if (!window.crypto?.subtle) {
+        throw new Error("当前浏览器不支持云端加密备份，请换用较新的浏览器");
+      }
+    };
+
+    async function deriveCloudKey() {
+      ensureCryptoSupport();
+      const seed = `${githubForm.token}::${githubForm.owner}/${githubForm.repo}`;
+      const keyBytes = await window.crypto.subtle.digest("SHA-256", encoder.encode(seed));
+      return window.crypto.subtle.importKey(
+        "raw",
+        keyBytes,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"]
+      );
     }
 
-    async function getPublicKey() {
-      const resp = await fetch(`${apiBase()}/actions/secrets/public-key`, {
-        headers: getApiHeaders(),
-      });
+    function buildCloudConfig() {
+      return {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        form: JSON.parse(JSON.stringify(form)),
+      };
+    }
+
+    function applyCloudConfig(payload) {
+      const nextForm = payload?.form || payload;
+      if (!nextForm || typeof nextForm !== "object") {
+        throw new Error("云端配置格式无效");
+      }
+
+      const nextAccounts = Array.isArray(nextForm.ACCOUNTS) && nextForm.ACCOUNTS.length > 0
+        ? nextForm.ACCOUNTS
+        : [{ username: "", unique_id: "", cookies: "", targets: [] }];
+
+      form.PROXY_ADDRESS = nextForm.PROXY_ADDRESS || "";
+      form.MESSAGE_TEMPLATE = nextForm.MESSAGE_TEMPLATE || "";
+      form.HITOKOTO_TYPES = Array.isArray(nextForm.HITOKOTO_TYPES) ? nextForm.HITOKOTO_TYPES : [];
+      form.MATCH_MODE = nextForm.MATCH_MODE || "nickname";
+      form.BROWSER_TIMEOUT = Number(nextForm.BROWSER_TIMEOUT) || 120000;
+      form.FRIEND_LIST_WAIT_TIME = Number(nextForm.FRIEND_LIST_WAIT_TIME) || 2000;
+      form.TASK_RETRY_TIMES = Number(nextForm.TASK_RETRY_TIMES) || 3;
+      form.LOG_LEVEL = nextForm.LOG_LEVEL || "Info";
+      form.ACCOUNTS = nextAccounts.map((account) => ({
+        username: account.username || "",
+        unique_id: account.unique_id || "",
+        cookies: account.cookies || "",
+        targets: Array.isArray(account.targets) ? account.targets : [],
+      }));
+    }
+
+    async function encryptCloudConfig(payload) {
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const key = await deriveCloudKey();
+      const encrypted = await window.crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        key,
+        encoder.encode(JSON.stringify(payload))
+      );
+
+      return JSON.stringify({
+        version: 1,
+        algorithm: "AES-GCM",
+        iv: bytesToBase64(iv),
+        ciphertext: bytesToBase64(new Uint8Array(encrypted)),
+      }, null, 2);
+    }
+
+    async function decryptCloudConfig(encryptedText) {
+      const parsed = JSON.parse(encryptedText);
+      if (!parsed?.iv || !parsed?.ciphertext) {
+        throw new Error("云端配置缺少加密字段");
+      }
+
+      const key = await deriveCloudKey();
+      const decrypted = await window.crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: base64ToBytes(parsed.iv) },
+        key,
+        base64ToBytes(parsed.ciphertext)
+      );
+
+      return JSON.parse(decoder.decode(decrypted));
+    }
+
+    async function getRepoDefaultBranch() {
+      const resp = await fetch(apiBase(), { headers: getApiHeaders() });
       if (!resp.ok) {
         const body = await resp.text();
-        throw new Error(`获取加密公钥失败 (${resp.status}): ${body}`);
+        throw new Error(`获取仓库信息失败 (${resp.status}): ${body}`);
       }
+      const data = await resp.json();
+      return data.default_branch || "main";
+    }
+
+    async function getRepoFile(path) {
+      const resp = await fetch(`${apiBase()}/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`, {
+        headers: getApiHeaders(),
+      });
+
+      if (resp.status === 404) {
+        return null;
+      }
+      if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(`读取云端文件失败 (${resp.status}): ${body}`);
+      }
+
       return await resp.json();
+    }
+
+    async function putRepoFile(path, content, messageText) {
+      const branch = await getRepoDefaultBranch();
+      const existing = await getRepoFile(path);
+      const resp = await fetch(`${apiBase()}/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          message: messageText,
+          branch,
+          content: utf8ToBase64(content),
+          sha: existing?.sha,
+        }),
+      });
+
+      if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(`写入云端文件失败 (${resp.status}): ${body}`);
+      }
+
+      return await resp.json();
+    }
+
+    async function saveCloudConfigToRepo() {
+      const payload = buildCloudConfig();
+      const encrypted = await encryptCloudConfig(payload);
+      await putRepoFile(CLOUD_CONFIG_PATH, encrypted, "chore: update cloud config backup");
+    }
+
+    async function loadCloudConfigFromRepo() {
+      const file = await getRepoFile(CLOUD_CONFIG_PATH);
+      if (!file?.content) {
+        return false;
+      }
+
+      const encryptedText = base64ToUtf8(String(file.content).replace(/\n/g, ""));
+      let config;
+      try {
+        config = await decryptCloudConfig(encryptedText);
+      } catch (e) {
+        throw new Error("云端配置解密失败，请使用保存时的同一个 GitHub Token");
+      }
+      applyCloudConfig(config);
+      return true;
     }
 
     async function loadCookiesFromCloud() {
@@ -136,23 +297,6 @@ const app = createApp({
       }
     }
 
-    async function setSecret(name, value, publicKey) {
-      const keyId = publicKey.key_id;
-      const encrypted = await encryptSecret(publicKey.key, String(value));
-      const resp = await fetch(`${envBase()}/secrets/${name}`, {
-        method: "PUT",
-        headers: getApiHeaders(),
-        body: JSON.stringify({
-          encrypted_value: encrypted,
-          key_id: keyId,
-        }),
-      });
-      if (!resp.ok) {
-        const body = await resp.text();
-        throw new Error(`设置密钥 ${name} 失败 (${resp.status}): ${body}`);
-      }
-    }
-
     async function triggerWorkflow() {
       const resp = await fetch(`${apiBase()}/actions/workflows/schedule.yml/dispatches`, {
         method: "POST",
@@ -174,7 +318,16 @@ const app = createApp({
       loadingConfig.value = true;
       deployResult.value = "";
       try {
-        deployResult.value = "正在加载配置...";
+        deployResult.value = "正在加载云端配置...";
+        const loadedFromBackup = await loadCloudConfigFromRepo();
+        if (loadedFromBackup) {
+          deployStatus.value = "success";
+          deployResult.value = "已从云端加密备份加载配置。";
+          ElementPlus.ElMessage.success("云端配置加载完成");
+          return;
+        }
+
+        deployResult.value = "正在加载环境配置...";
         const [resp, cloudCookies] = await Promise.all([
           fetch(`${envBase()}/variables`, { headers: getApiHeaders() }),
           loadCookiesFromCloud(),
@@ -236,6 +389,35 @@ const app = createApp({
       }
     };
 
+    const saveCloudConfigOnly = async () => {
+      if (!githubForm.owner || !githubForm.repo || !githubForm.token) {
+        deployResult.value = "请先填写 GitHub 仓库所有者、仓库名和 Token";
+        deployStatus.value = "warning";
+        return;
+      }
+
+      localStorage.setItem("gh_owner", githubForm.owner);
+      localStorage.setItem("gh_repo", githubForm.repo);
+      localStorage.setItem("gh_token", githubForm.token);
+
+      savingCloud.value = true;
+      deployResult.value = "";
+      deployStatus.value = "success";
+
+      try {
+        deployResult.value = "正在保存云端配置...";
+        await saveCloudConfigToRepo();
+        deployResult.value = "云端配置已保存，换设备后可直接加载。";
+        ElementPlus.ElMessage.success("云端配置保存成功");
+      } catch (e) {
+        deployStatus.value = "error";
+        deployResult.value = e.message || "云端保存失败";
+        ElementPlus.ElMessage.error(deployResult.value);
+      } finally {
+        savingCloud.value = false;
+      }
+    };
+
     const deployAndRun = async () => {
       if (!githubForm.owner || !githubForm.repo || !githubForm.token) {
         deployResult.value = "请先填写 GitHub 仓库所有者、仓库名和 Token";
@@ -252,8 +434,8 @@ const app = createApp({
       deployStatus.value = "success";
 
       try {
-        deployResult.value = "正在获取加密公钥...";
-        const publicKey = await getPublicKey();
+        deployResult.value = "正在保存云端配置...";
+        await saveCloudConfigToRepo();
 
         deployResult.value = "正在写入环境变量...";
         const vars = environmentVariables.value;
@@ -262,7 +444,7 @@ const app = createApp({
           await setVariable(name, value);
         }
 
-        deployResult.value = "正在写入密钥...";
+        deployResult.value = "正在写入 Cookies 配置...";
         const cookiesBackup = {};
         form.ACCOUNTS.forEach(a => {
           if (a.unique_id && a.cookies) {
@@ -272,6 +454,9 @@ const app = createApp({
         });
         if (Object.keys(cookiesBackup).length > 0) {
           await setVariable("COOKIES_BACKUP", JSON.stringify(cookiesBackup));
+        }
+        for (const [name, value] of Object.entries(environmentSecrets.value)) {
+          if (value) await setVariable(name, value);
         }
 
         deployResult.value = "正在触发运行...";
@@ -290,7 +475,7 @@ const app = createApp({
     };
 
     const openTokenHelp = () => {
-      window.open("https://github.com/settings/tokens/new?scopes=workflow", "_blank");
+      window.open("https://github.com/settings/tokens/new?scopes=repo,workflow", "_blank");
     };
 
     const copyValue = (value) => {
@@ -351,6 +536,7 @@ const app = createApp({
       form,
       githubForm,
       deploying,
+      savingCloud,
       deployResult,
       deployStatus,
       environmentVariables,
@@ -361,6 +547,7 @@ const app = createApp({
       addAccount,
       removeAccount,
       deployAndRun,
+      saveCloudConfigOnly,
       loadFromGitHub,
       triggerRun,
       loadingConfig,
