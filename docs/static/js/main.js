@@ -4,46 +4,20 @@ const app = createApp({
     const message = ref("Hello vue!");
 
     const match_mode_options = [
-      {
-        id: "nickname",
-        label: "昵称",
-        value: "nickname",
-      },
-      {
-        id: "short_id",
-        label: "抖音号",
-        value: "short_id",
-      },
+      { id: "nickname", label: "昵称", value: "nickname" },
+      { id: "short_id", label: "抖音号", value: "short_id" },
     ];
 
     const log_level_options = [
-      {
-        id: "Debug",
-        label: "Debug",
-        value: "Debug",
-      },
-      {
-        id: "Info",
-        label: "Info",
-        value: "Info",
-      },
-      {
-        id: "Warning",
-        label: "Warning",
-        value: "Warning",
-      },
-      {
-        id: "Error",
-        label: "Error",
-        value: "Error",
-      },
+      { id: "Debug", label: "Debug", value: "Debug" },
+      { id: "Info", label: "Info", value: "Info" },
+      { id: "Warning", label: "Warning", value: "Warning" },
+      { id: "Error", label: "Error", value: "Error" },
     ];
 
-    // do not use same name with ref
     const form = reactive({
       PROXY_ADDRESS: "",
-      MESSAGE_TEMPLATE:
-        "[盖瑞]今日火花[加一]\n—— [右边] 每日一言 [左边] ——\n[API]",
+      MESSAGE_TEMPLATE: "[盖瑞]今日火花[加一]\n—— [右边] 每日一言 [左边] ——\n[API]",
       HITOKOTO_TYPES: ["文学", "影视", "诗词", "哲学"],
       MATCH_MODE: "nickname",
       BROWSER_TIMEOUT: 120000,
@@ -59,6 +33,16 @@ const app = createApp({
         },
       ],
     });
+
+    const githubForm = reactive({
+      owner: localStorage.getItem("gh_owner") || "",
+      repo: localStorage.getItem("gh_repo") || "DouYinSparkFlow",
+      token: localStorage.getItem("gh_token") || "",
+    });
+
+    const deploying = ref(false);
+    const deployResult = ref("");
+    const deployStatus = ref("success");
 
     const environmentVariables = computed(() => {
       return {
@@ -85,6 +69,129 @@ const app = createApp({
       }, {});
     });
 
+    const getApiHeaders = () => ({
+      "Authorization": `Bearer ${githubForm.token}`,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "Content-Type": "application/json",
+    });
+
+    const apiBase = () =>
+      `https://api.github.com/repos/${githubForm.owner}/${githubForm.repo}`;
+
+    const envBase = () => `${apiBase()}/environments/user-data`;
+
+    async function encryptSecret(publicKey, secretValue) {
+      await sodium.ready;
+      const keyBytes = sodium.from_base64(publicKey, sodium.base64_variants.ORIGINAL);
+      const msgBytes = sodium.from_string(secretValue);
+      const encBytes = sodium.crypto_box_seal(msgBytes, keyBytes);
+      return sodium.to_base64(encBytes, sodium.base64_variants.ORIGINAL);
+    }
+
+    async function getPublicKey() {
+      const resp = await fetch(`${apiBase()}/actions/secrets/public-key`, {
+        headers: getApiHeaders(),
+      });
+      if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(`获取加密公钥失败 (${resp.status}): ${body}`);
+      }
+      return await resp.json();
+    }
+
+    async function setVariable(name, value) {
+      const val = typeof value === "object" ? JSON.stringify(value) : String(value);
+      const resp = await fetch(`${envBase()}/variables/${name}`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ name, value: val }),
+      });
+      if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(`设置变量 ${name} 失败 (${resp.status}): ${body}`);
+      }
+    }
+
+    async function setSecret(name, value, publicKey) {
+      const keyId = publicKey.key_id;
+      const encrypted = await encryptSecret(publicKey.key, String(value));
+      const resp = await fetch(`${envBase()}/secrets/${name}`, {
+        method: "PUT",
+        headers: getApiHeaders(),
+        body: JSON.stringify({
+          encrypted_value: encrypted,
+          key_id: keyId,
+        }),
+      });
+      if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(`设置密钥 ${name} 失败 (${resp.status}): ${body}`);
+      }
+    }
+
+    async function triggerWorkflow() {
+      const resp = await fetch(`${apiBase()}/actions/workflows/schedule.yml/dispatches`, {
+        method: "POST",
+        headers: getApiHeaders(),
+        body: JSON.stringify({ ref: "main" }),
+      });
+      if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(`触发运行失败 (${resp.status}): ${body}`);
+      }
+    }
+
+    const deployAndRun = async () => {
+      if (!githubForm.owner || !githubForm.repo || !githubForm.token) {
+        deployResult.value = "请先填写 GitHub 仓库所有者、仓库名和 Token";
+        deployStatus.value = "warning";
+        return;
+      }
+
+      localStorage.setItem("gh_owner", githubForm.owner);
+      localStorage.setItem("gh_repo", githubForm.repo);
+      localStorage.setItem("gh_token", githubForm.token);
+
+      deploying.value = true;
+      deployResult.value = "";
+      deployStatus.value = "success";
+
+      try {
+        deployResult.value = "正在获取加密公钥...";
+        const publicKey = await getPublicKey();
+
+        deployResult.value = "正在写入环境变量...";
+        const vars = environmentVariables.value;
+        for (const [name, value] of Object.entries(vars)) {
+          await setVariable(name, value);
+        }
+
+        deployResult.value = "正在写入密钥...";
+        const secrets = environmentSecrets.value;
+        for (const [name, value] of Object.entries(secrets)) {
+          await setSecret(name, value, publicKey);
+        }
+
+        deployResult.value = "正在触发运行...";
+        await triggerWorkflow();
+
+        deployStatus.value = "success";
+        deployResult.value = "部署成功！已触发运行，请稍后在 GitHub Actions 中查看结果。";
+        ElementPlus.ElMessage.success("部署并运行成功！");
+      } catch (e) {
+        deployStatus.value = "error";
+        deployResult.value = e.message || "部署失败";
+        ElementPlus.ElMessage.error(deployResult.value);
+      } finally {
+        deploying.value = false;
+      }
+    };
+
+    const openTokenHelp = () => {
+      window.open("https://github.com/settings/tokens/new?scopes=workflow", "_blank");
+    };
+
     const copyValue = (value) => {
       if (typeof value === "object") {
         value = JSON.stringify(value);
@@ -94,75 +201,42 @@ const app = createApp({
         value = value.replace(/\n/g, "\\n");
       }
       navigator.clipboard.writeText(value).then(
-        () => {
-          ElementPlus.ElMessage.success("已复制到剪贴板");
-        },
-        (err) => {
-          ElementPlus.ElMessage.error("复制失败: " + err);
-        }
+        () => { ElementPlus.ElMessage.success("已复制到剪贴板"); },
+        (err) => { ElementPlus.ElMessage.error("复制失败: " + err); }
       );
     };
 
     const copyEnvFile = () => {
-      // 合并两个对象
       const allVars = {
         ...environmentVariables.value,
         ...environmentSecrets.value,
       };
-      // 生成 .env 格式字符串
       const item = Object.entries(allVars)
         .map(([key, value]) => {
-          if (typeof value === "object") {
-            value = JSON.stringify(value);
-          } else if (typeof value === "number") {
-            value = value.toString();
-          } else {
-            value = value.replace(/\n/g, "\\n");
-          }
+          if (typeof value === "object") value = JSON.stringify(value);
+          else if (typeof value === "number") value = value.toString();
+          else value = value.replace(/\n/g, "\\n");
           return `${key}=${value}`;
         })
         .join("\n");
       navigator.clipboard.writeText(item).then(
-        () => {
-          ElementPlus.ElMessage.success("已复制 .env 配置文件到剪贴板");
-        },
-        (err) => {
-          ElementPlus.ElMessage.error("复制失败: " + err);
-        }
+        () => { ElementPlus.ElMessage.success("已复制 .env 配置文件到剪贴板"); },
+        (err) => { ElementPlus.ElMessage.error("复制失败: " + err); }
       );
     };
 
     const openEnvDetails = (name, value) => {
-      console.log(
-        "openEnvDetails called with name:",
-        name,
-        "value:",
-        value,
-        typeof value
-      );
-      if (typeof value === "object") {
-        value = JSON.stringify(value, null, 2);
-        console.log("value is object, stringify it:", value);
-      }
-
+      if (typeof value === "object") value = JSON.stringify(value, null, 2);
       ElementPlus.ElMessageBox.alert(
-        "<div style='text-align: left; white-space: pre-wrap; word-break: break-all; width: 400px; max-height: 200px; overflow: auto;'>" +
-          value +
-          "</div>",
+        "<div style='text-align:left;white-space:pre-wrap;word-break:break-all;width:400px;max-height:200px;overflow:auto'>" +
+          value + "</div>",
         `${name} 详情`,
-        {
-          dangerouslyUseHTMLString: true,
-        }
+        { dangerouslyUseHTMLString: true }
       );
     };
 
     const addAccount = () => {
-      form.ACCOUNTS.push({
-        username: "",
-        unique_id: "",
-        cookies: "",
-        targets: [],
-      });
+      form.ACCOUNTS.push({ username: "", unique_id: "", cookies: "", targets: [] });
     };
 
     const removeAccount = (index) => {
@@ -174,6 +248,10 @@ const app = createApp({
       log_level_options,
       message,
       form,
+      githubForm,
+      deploying,
+      deployResult,
+      deployStatus,
       environmentVariables,
       environmentSecrets,
       copyValue,
@@ -181,6 +259,8 @@ const app = createApp({
       openEnvDetails,
       addAccount,
       removeAccount,
+      deployAndRun,
+      openTokenHelp,
     };
   },
 });
