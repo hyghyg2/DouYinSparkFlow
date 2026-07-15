@@ -83,13 +83,15 @@ const app = createApp({
 
     const envBase = () => `${apiBase()}/environments/user-data`;
 
-    async function encryptSecret(publicKey, secretValue) {
-      await sodium.ready;
-      const keyBytes = sodium.from_base64(publicKey, sodium.base64_variants.ORIGINAL);
-      const msgBytes = sodium.from_string(secretValue);
-      const encBytes = sodium.crypto_box_seal(msgBytes, keyBytes);
-      return sodium.to_base64(encBytes, sodium.base64_variants.ORIGINAL);
+    function encryptSecret(publicKey, secretValue) {
+      const pk = nacl.util.decodeBase64(publicKey);
+      const ephemeral = nacl.box.keyPair();
+      const nonce = nacl.hash(jsConcat(ephemeral.publicKey, pk)).slice(0, 24);
+      const msg = nacl.util.decodeUTF8(secretValue);
+      const enc = nacl.box(msg, nonce, pk, ephemeral.secretKey);
+      return nacl.util.encodeBase64(jsConcat(ephemeral.publicKey, enc));
     }
+    function jsConcat(a, b) { const c = new Uint8Array(a.length + b.length); c.set(a); c.set(b, a.length); return c; }
 
     async function getPublicKey() {
       const resp = await fetch(`${apiBase()}/actions/secrets/public-key`, {
@@ -368,4 +370,3 @@ const app = createApp({
 });
 app.use(ElementPlus);
 app.mount("#app");
-
