@@ -48,8 +48,21 @@ body {
 }
 
 .logo {
-    width: 32px;
-    height: 32px;
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 12px;
+    flex: 0 0 auto;
+}
+
+.page-title {
+    min-width: 0;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #1f2937;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .page-tabs {
