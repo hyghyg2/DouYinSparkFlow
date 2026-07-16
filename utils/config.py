@@ -65,6 +65,30 @@ def sanitize_cookies(cookies):
     return cookies
 
 
+def normalize_targets(targets, username):
+    normalized_targets = []
+    seen_targets = set()
+    duplicate_targets = []
+
+    for target in targets or []:
+        normalized_target = str(target).strip()
+        if not normalized_target:
+            continue
+        if normalized_target in seen_targets:
+            if normalized_target not in duplicate_targets:
+                duplicate_targets.append(normalized_target)
+            continue
+        seen_targets.add(normalized_target)
+        normalized_targets.append(normalized_target)
+
+    if duplicate_targets:
+        logger.warning(
+            f"{username} 的目标好友列表存在重复项，已自动去重: {duplicate_targets}"
+        )
+
+    return normalized_targets
+
+
 def get_userData():
     """
     获取用户数据目录
@@ -105,7 +129,7 @@ def get_userData():
                 "unique_id": unique_id,
                 "username": username,
                 "cookies": sanitize_cookies(cookies),
-                "targets": task.get("targets", []),
+                "targets": normalize_targets(task.get("targets", []), username),
             }
         )
 
