@@ -41,6 +41,7 @@ const app = createApp({
       owner: localStorage.getItem("gh_owner") || "",
       repo: localStorage.getItem("gh_repo") || "DouYinSparkFlow",
       token: localStorage.getItem("gh_token") || "",
+      cloudConfigKey: localStorage.getItem("cloud_config_key") || "",
     });
 
     const deploying = ref(false);
@@ -117,40 +118,46 @@ const app = createApp({
       }
     };
 
+    async function importAesKeyFromSeed(seed) {
+      const keyBytes = await window.crypto.subtle.digest("SHA-256", encoder.encode(seed));
+      return window.crypto.subtle.importKey(
+        "raw",
+        keyBytes,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"]
+      );
+    }
+
     async function deriveCloudKey() {
+      ensureCryptoSupport();
+      const cloudConfigKey = String(githubForm.cloudConfigKey || "").trim();
+      if (!cloudConfigKey) {
+        throw new Error("请先填写云端配置密钥");
+      }
+
+      return importAesKeyFromSeed(`DouYinSparkFlow::cloud-config-key::${cloudConfigKey}`);
+    }
+
+    async function deriveTokenCloudKey() {
       ensureCryptoSupport();
       const token = String(githubForm.token || "").trim();
       if (!token) {
         throw new Error("请先填写 GitHub Token");
       }
 
-      const seed = `DouYinSparkFlow::${token}`;
-      const keyBytes = await window.crypto.subtle.digest("SHA-256", encoder.encode(seed));
-      return window.crypto.subtle.importKey(
-        "raw",
-        keyBytes,
-        { name: "AES-GCM" },
-        false,
-        ["encrypt", "decrypt"]
-      );
+      return importAesKeyFromSeed(`DouYinSparkFlow::${token}`);
     }
 
     async function deriveLegacyCloudKey() {
       ensureCryptoSupport();
       const seed = `${githubForm.token}::${githubForm.owner}/${githubForm.repo}`;
-      const keyBytes = await window.crypto.subtle.digest("SHA-256", encoder.encode(seed));
-      return window.crypto.subtle.importKey(
-        "raw",
-        keyBytes,
-        { name: "AES-GCM" },
-        false,
-        ["encrypt", "decrypt"]
-      );
+      return importAesKeyFromSeed(seed);
     }
 
     function buildCloudConfig() {
       return {
-        version: 2,
+        version: 3,
         savedAt: new Date().toISOString(),
         form: JSON.parse(JSON.stringify(form)),
       };
@@ -192,9 +199,9 @@ const app = createApp({
       );
 
       return JSON.stringify({
-        version: 2,
+        version: 3,
         algorithm: "AES-GCM",
-        keySource: "github-token",
+        keySource: "cloud-config-key",
         iv: bytesToBase64(iv),
         ciphertext: bytesToBase64(new Uint8Array(encrypted)),
       }, null, 2);
@@ -207,8 +214,14 @@ const app = createApp({
       }
 
       const payloadBytes = base64ToBytes(parsed.ciphertext);
-      const attempts = [deriveCloudKey, deriveLegacyCloudKey];
-      let lastError = null;
+      const isCloudKeyBackup = parsed.keySource === "cloud-config-key" || Number(parsed.version) >= 3;
+      if (isCloudKeyBackup && !String(githubForm.cloudConfigKey || "").trim()) {
+        throw new Error("请先填写云端配置密钥");
+      }
+
+      const attempts = isCloudKeyBackup
+        ? [deriveCloudKey]
+        : [deriveCloudKey, deriveTokenCloudKey, deriveLegacyCloudKey];
 
       for (const deriveKeyFn of attempts) {
         try {
@@ -219,12 +232,13 @@ const app = createApp({
             payloadBytes
           );
           return JSON.parse(decoder.decode(decrypted));
-        } catch (e) {
-          lastError = e;
-        }
+        } catch {}
       }
 
-      throw lastError || new Error("云端配置解密失败");
+      if (isCloudKeyBackup) {
+        throw new Error("云端配置解密失败，请确认云端配置密钥是否正确");
+      }
+      throw new Error("云端配置解密失败，请确认云端配置密钥或旧 Token 是否正确");
     }
 
     async function getRepoDefaultBranch() {
@@ -292,7 +306,7 @@ const app = createApp({
       try {
         config = await decryptCloudConfig(encryptedText);
       } catch (e) {
-        throw new Error("云端配置解密失败，请使用保存时的同一个 GitHub Token");
+        throw new Error(e.message || "云端配置解密失败，请确认云端配置密钥是否正确");
       }
       applyCloudConfig(config);
       return true;
@@ -344,6 +358,12 @@ const app = createApp({
         deployResult.value = "请先填写 GitHub 仓库所有者、仓库名和 Token";
         deployStatus.value = "warning";
         return;
+      }
+      localStorage.setItem("gh_owner", githubForm.owner);
+      localStorage.setItem("gh_repo", githubForm.repo);
+      localStorage.setItem("gh_token", githubForm.token);
+      if (githubForm.cloudConfigKey) {
+        localStorage.setItem("cloud_config_key", githubForm.cloudConfigKey);
       }
       loadingConfig.value = true;
       deployResult.value = "";
@@ -425,10 +445,16 @@ const app = createApp({
         deployStatus.value = "warning";
         return;
       }
+      if (!githubForm.cloudConfigKey) {
+        deployResult.value = "请先填写云端配置密钥";
+        deployStatus.value = "warning";
+        return;
+      }
 
       localStorage.setItem("gh_owner", githubForm.owner);
       localStorage.setItem("gh_repo", githubForm.repo);
       localStorage.setItem("gh_token", githubForm.token);
+      localStorage.setItem("cloud_config_key", githubForm.cloudConfigKey);
 
       savingCloud.value = true;
       deployResult.value = "";
@@ -454,10 +480,16 @@ const app = createApp({
         deployStatus.value = "warning";
         return;
       }
+      if (!githubForm.cloudConfigKey) {
+        deployResult.value = "请先填写云端配置密钥";
+        deployStatus.value = "warning";
+        return;
+      }
 
       localStorage.setItem("gh_owner", githubForm.owner);
       localStorage.setItem("gh_repo", githubForm.repo);
       localStorage.setItem("gh_token", githubForm.token);
+      localStorage.setItem("cloud_config_key", githubForm.cloudConfigKey);
 
       deploying.value = true;
       deployResult.value = "";
