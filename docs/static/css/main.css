@@ -83,6 +83,17 @@ body {
     gap: 18px;
 }
 
+.deploy-page {
+    width: min(760px, 100%);
+    margin: 0 auto;
+}
+
+.deploy-page .el-form {
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
 .panel-block {
     width: 100%;
     padding: 20px;
