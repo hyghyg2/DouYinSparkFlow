@@ -1,4 +1,4 @@
-const { createApp, ref, reactive, computed } = Vue;
+const { createApp, ref, reactive, computed, onMounted, onBeforeUnmount } = Vue;
 const app = createApp({
   setup() {
     const CLOUD_CONFIG_PATH = "cloud-config/user-data.enc.json";
@@ -6,6 +6,9 @@ const app = createApp({
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     const message = ref("Hello vue!");
+    const activePage = ref("deploy");
+    const viewportWidth = ref(window.innerWidth);
+    const isMobile = computed(() => viewportWidth.value < 768);
 
     const match_mode_options = [
       { id: "nickname", label: "昵称", value: "nickname" },
@@ -51,6 +54,18 @@ const app = createApp({
     const running = ref(false);
     const deployResult = ref("");
     const deployStatus = ref("success");
+
+    const handleResize = () => {
+      viewportWidth.value = window.innerWidth;
+    };
+
+    onMounted(() => {
+      window.addEventListener("resize", handleResize);
+    });
+
+    onBeforeUnmount(() => {
+      window.removeEventListener("resize", handleResize);
+    });
 
     const environmentVariables = computed(() => {
       return {
@@ -607,6 +622,8 @@ const app = createApp({
       match_mode_options,
       log_level_options,
       message,
+      activePage,
+      isMobile,
       form,
       githubForm,
       deploying,

@@ -9,78 +9,226 @@
 body {
     margin: 0;
     padding: 0;
-    height: 100vh;
+    min-height: 100vh;
+    overflow-x: hidden;
     background-color: #f0f0f0;
 }
 
 .icon {
-    padding: 0px;
+    padding: 0;
     margin: 0;
     border: 0;
     font-size: 20px;
 }
 
 #app {
-    background-color: #fff;
-    font-family: 'Arial', sans-serif;
-    max-width: 1400px;
-    height: calc(100%- 40px);
+    width: min(1400px, 100%);
+    min-height: 100vh;
     margin: 0 auto;
     padding: 20px;
     border-radius: 8px;
+    background-color: #fff;
+    font-family: Arial, sans-serif;
+}
+
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
 }
 
 .page-header {
-    text-align: center;
-    margin-bottom: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 10px;
-    padding-bottom: 20px;
+    padding-bottom: 18px;
     border-bottom: 2px solid #eee;
+    text-align: center;
 }
 
-#environment-variables,
-#environment-secrets {
-    margin-bottom: 10px;
+.logo {
+    width: 32px;
+    height: 32px;
+}
+
+.page-tabs {
+    width: 100%;
+}
+
+.page-tabs .el-tabs__header {
+    margin: 0 0 16px;
+}
+
+.page-tabs .el-tabs__content {
+    overflow: visible;
+}
+
+.page-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.panel-block {
+    width: 100%;
+    padding: 20px;
+    border: 1px solid #e4e7ed;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.section-header,
+.card-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.account-item {
+    margin-bottom: 16px;
+    padding: 16px;
+    border: 1px solid #e4e7ed;
+    border-radius: 6px;
+    background: #fafbfc;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+.action-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.action-grid .el-button {
+    width: 100%;
+    margin: 0;
+}
+
+.action-result {
+    width: 100%;
+    margin-top: 14px;
+}
+
+.action-result .el-alert {
+    width: 100%;
+}
+
+.env-page {
+    gap: 12px;
+}
+
+.env-card {
+    width: 100%;
+    border-radius: 6px;
+    box-shadow: none;
+}
+
+.env-card .el-card__header {
+    padding: 16px 20px;
+}
+
+.env-card .el-card__body {
     padding: 20px;
 }
 
 .config-item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 10px;
+    gap: 12px;
+    width: 100%;
     margin-bottom: 15px;
 }
 
-.main {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 20px;
+.config-item:last-child {
+    margin-bottom: 0;
 }
 
-.base-config-form .section-header,
-.account-config-form .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 15px;
+.config-item .label {
+    min-width: 0;
+    color: #303133;
+    font-weight: 500;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
-.account-item {
-    background: #fafbfc;
-    border: 1px solid #e4e7ed;
-    border-radius: 6px;
-    padding: 16px;
-    margin-bottom: 16px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+.item-actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
 }
 
-.account-config-form .action {
+.item-actions .el-button {
+    min-width: 92px;
+    margin: 0;
+}
+
+.env-actions {
     display: flex;
-    justify-content: center;
-    gap: 20px;
+    justify-content: flex-end;
+}
+
+.env-copy-button {
+    min-width: 220px;
+}
+
+@media (max-width: 768px) {
+    #app {
+        padding: 12px;
+        border-radius: 0;
+    }
+
+    .page-header {
+        align-items: flex-start;
+        padding-bottom: 12px;
+        text-align: left;
+    }
+
+    .panel-block {
+        padding: 16px;
+    }
+
+    .el-form,
+    .el-form-item__content,
+    .el-form-item__content > .el-input,
+    .el-form-item__content > .el-select,
+    .el-form-item__content > .el-input-number,
+    .el-form-item__content > .el-textarea,
+    .el-form-item__content > .el-input-tag {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .env-card .el-card__header,
+    .env-card .el-card__body {
+        padding: 16px;
+    }
+
+    .config-item {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .item-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .item-actions .el-button {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .action-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .env-actions,
+    .env-copy-button {
+        width: 100%;
+    }
 }
