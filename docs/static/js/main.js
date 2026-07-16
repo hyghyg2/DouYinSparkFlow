@@ -41,7 +41,7 @@ const app = createApp({
       owner: localStorage.getItem("gh_owner") || "",
       repo: localStorage.getItem("gh_repo") || "DouYinSparkFlow",
       token: localStorage.getItem("gh_token") || "",
-      cloudConfigKey: localStorage.getItem("cloud_config_key") || "",
+      cloudConfigKey: localStorage.getItem("cloud_config_key") || "qweasd..",
     });
 
     const deploying = ref(false);
