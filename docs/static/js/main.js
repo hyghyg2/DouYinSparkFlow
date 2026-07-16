@@ -2,6 +2,7 @@ const { createApp, ref, reactive, computed } = Vue;
 const app = createApp({
   setup() {
     const CLOUD_CONFIG_PATH = "cloud-config/user-data.enc.json";
+    const DEFAULT_CLOUD_CONFIG_KEY = "qweasd..";
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     const message = ref("Hello vue!");
@@ -41,7 +42,7 @@ const app = createApp({
       owner: localStorage.getItem("gh_owner") || "",
       repo: localStorage.getItem("gh_repo") || "DouYinSparkFlow",
       token: localStorage.getItem("gh_token") || "",
-      cloudConfigKey: localStorage.getItem("cloud_config_key") || "qweasd..",
+      cloudConfigKey: localStorage.getItem("cloud_config_key") || DEFAULT_CLOUD_CONFIG_KEY,
     });
 
     const deploying = ref(false);
@@ -129,14 +130,18 @@ const app = createApp({
       );
     }
 
-    async function deriveCloudKey() {
+    async function deriveCloudKeyFromValue(value) {
       ensureCryptoSupport();
-      const cloudConfigKey = String(githubForm.cloudConfigKey || "").trim();
+      const cloudConfigKey = String(value || "").trim();
       if (!cloudConfigKey) {
         throw new Error("请先填写云端配置密钥");
       }
 
       return importAesKeyFromSeed(`DouYinSparkFlow::cloud-config-key::${cloudConfigKey}`);
+    }
+
+    async function deriveCloudKey() {
+      return deriveCloudKeyFromValue(githubForm.cloudConfigKey || DEFAULT_CLOUD_CONFIG_KEY);
     }
 
     async function deriveTokenCloudKey() {
@@ -215,15 +220,18 @@ const app = createApp({
 
       const payloadBytes = base64ToBytes(parsed.ciphertext);
       const isCloudKeyBackup = parsed.keySource === "cloud-config-key" || Number(parsed.version) >= 3;
-      if (isCloudKeyBackup && !String(githubForm.cloudConfigKey || "").trim()) {
-        throw new Error("请先填写云端配置密钥");
-      }
+      const currentCloudKey = String(githubForm.cloudConfigKey || "").trim();
+      const cloudKeyCandidates = [...new Set([
+        currentCloudKey,
+        DEFAULT_CLOUD_CONFIG_KEY,
+      ].filter(Boolean))];
 
       const attempts = isCloudKeyBackup
-        ? [deriveCloudKey]
+        ? cloudKeyCandidates.map((candidate) => () => deriveCloudKeyFromValue(candidate))
         : [deriveCloudKey, deriveTokenCloudKey, deriveLegacyCloudKey];
 
-      for (const deriveKeyFn of attempts) {
+      for (let i = 0; i < attempts.length; i++) {
+        const deriveKeyFn = attempts[i];
         try {
           const key = await deriveKeyFn();
           const decrypted = await window.crypto.subtle.decrypt(
@@ -231,6 +239,10 @@ const app = createApp({
             key,
             payloadBytes
           );
+          if (isCloudKeyBackup && cloudKeyCandidates[i] === DEFAULT_CLOUD_CONFIG_KEY) {
+            githubForm.cloudConfigKey = DEFAULT_CLOUD_CONFIG_KEY;
+            localStorage.setItem("cloud_config_key", DEFAULT_CLOUD_CONFIG_KEY);
+          }
           return JSON.parse(decoder.decode(decrypted));
         } catch {}
       }
