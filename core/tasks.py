@@ -1,4 +1,5 @@
 import traceback
+from collections import Counter
 from utils.logger import setup_logger
 from utils.config import get_config, get_userData
 from core.msg_builder import build_message, build_message_with_openai
@@ -15,6 +16,26 @@ userData = get_userData()
 logger = setup_logger(level=config.get("logLevel", "Info"))
 matchMode = config.get("matchMode", "nickname")
 userIDDict = {}
+
+
+def format_remaining_targets(remaining_targets):
+    pending = []
+    for target, count in remaining_targets.items():
+        if count <= 0:
+            continue
+        pending.extend([target] * count)
+    return pending
+
+
+def resolve_target_symbol(target_name, ordered_targets, remaining_targets):
+    if matchMode != "short_id":
+        return target_name if remaining_targets[target_name] > 0 else None
+
+    for target in ordered_targets:
+        info = userIDDict.get(target, {})
+        if info.get("nickname") == target_name and remaining_targets[target] > 0:
+            return target
+    return None
 
 def handle_response(response: Response):
     """
@@ -95,9 +116,10 @@ def scroll_and_select_user(page, username, targets):
 
     time.sleep(config["friendListTimeout"] / 1000)  # 等待好友列表加载
 
-    found_targets = set()
-    # [修改] 复制一份目标列表用于追踪进度
-    remaining_targets = set(targets)
+    ordered_targets = [str(target) for target in targets]
+    remaining_targets = Counter(ordered_targets)
+    matched_name_counts = Counter()
+    last_visible_snapshot = None
 
     # [修复] 新增：连续空滚动计数器（滚动后没有发现新好友的次数）
     empty_scroll_count = 0
@@ -106,9 +128,8 @@ def scroll_and_select_user(page, username, targets):
     while True:
         # 查找所有目标元素
         target_elements = page.locator(target_selector).all()
-
-        # [修复] 记录本轮循环前已发现的好友数，用于判断是否有新发现
-        prev_found_count = len(found_targets)
+        visible_name_counts = Counter()
+        visible_snapshot = []
 
         for element in target_elements:
             try:
@@ -117,61 +138,69 @@ def scroll_and_select_user(page, username, targets):
                     """xpath=.//span[contains(@class, "item-header-name-")]"""
                 )
                 targetName = span.inner_text()
-
-                if targetName in found_targets:
-                    continue  # 已处理过，跳过
-                found_targets.add(targetName)
+                visible_name_counts[targetName] += 1
+                current_name_index = visible_name_counts[targetName]
+                visible_snapshot.append((targetName, current_name_index))
 
                 logger.debug(f"账号 {username} 找到好友 {targetName}")
-                # 检查是否是目标用户名
-                if matchMode == "short_id":
-                    targetSymbol = next((sid for sid, info in userIDDict.items() if info.get("nickname") == targetName), None)
-                else:
-                    targetSymbol = targetName
+                if current_name_index <= matched_name_counts[targetName]:
+                    continue
 
-                if targetSymbol in targets:
+                targetSymbol = resolve_target_symbol(
+                    targetName,
+                    ordered_targets,
+                    remaining_targets,
+                )
+
+                if targetSymbol and remaining_targets[targetSymbol] > 0:
                     element.click()
                     if matchMode == "short_id":
                         logger.debug(
-                            f"账号 {username} 选中目标好友 {targetName} 准备开始交互"
+                            f"账号 {username} 选中目标好友 {targetName} (ShortId: {targetSymbol}) 准备开始交互"
                         )
                     else:
                         logger.debug(
-                            f"账号 {username} 选中目标好友 {targetName} (ShortId: {targetSymbol}) 准备开始交互"
+                            f"账号 {username} 选中目标好友 {targetName} 准备开始交互"
                         )
+                    matched_name_counts[targetName] += 1
+                    remaining_targets[targetSymbol] -= 1
                     yield targetName
                     
-                    # [修改] 标记已找到，如果全找到了直接退出
-                    if targetSymbol in remaining_targets:
-                        remaining_targets.remove(targetSymbol)
-                    if len(remaining_targets) == 0:
+                    if sum(remaining_targets.values()) == 0:
                         logger.debug(f"账号 {username} 所有目标好友均已找到，停止搜索")
                         return
                     break
             except Exception as e:
                 traceback.print_exc()
         else:
-            # [修复] 检查本轮是否有新好友被发现
-            new_found = len(found_targets) > prev_found_count
-            if new_found:
+            # 用当前可见列表快照判断是否还在加载新内容，避免同名好友被错误去重
+            current_snapshot = tuple(visible_snapshot)
+            if current_snapshot != last_visible_snapshot:
                 empty_scroll_count = 0  # 有新发现，重置计数器
             else:
                 empty_scroll_count += 1  # 无新发现，递增计数器
+            last_visible_snapshot = current_snapshot
 
             # [修复] 状态检测逻辑（多重兜底）
             
             # 1. 检查是否到底（"没有更多了" —— 使用模糊类名匹配）
             if page.locator(no_more_selector).count() > 0:
                 logger.info(f"账号 {username} 检测到'没有更多了'标志，已到达底部")
-                if len(remaining_targets) > 0:
-                    logger.warning(f"账号 {username} 搜索结束，仍有以下好友未找到: {remaining_targets}")
+                if sum(remaining_targets.values()) > 0:
+                    logger.warning(
+                        f"账号 {username} 搜索结束，仍有以下好友未找到: "
+                        f"{format_remaining_targets(remaining_targets)}"
+                    )
                 break
 
             # 2. [修复] 检查连续空滚动次数，防止死循环
             if empty_scroll_count >= MAX_EMPTY_SCROLLS:
                 logger.warning(f"账号 {username} 连续 {MAX_EMPTY_SCROLLS} 次滚动未发现新好友，判定已到达底部")
-                if len(remaining_targets) > 0:
-                    logger.warning(f"账号 {username} 搜索结束，仍有以下好友未找到: {remaining_targets}")
+                if sum(remaining_targets.values()) > 0:
+                    logger.warning(
+                        f"账号 {username} 搜索结束，仍有以下好友未找到: "
+                        f"{format_remaining_targets(remaining_targets)}"
+                    )
                 break
 
             # 3. 检查是否正在加载
@@ -248,7 +277,7 @@ def do_user_task(browser, username, cookies, targets):
         # 滚动并选择用户
         for username in scroll_and_select_user(page, username, targets):
             logger.debug(f"账号 {username} 已选中好友 {username} 发送消息")
-            time.sleep(1.5)  # 等待聊天窗口加载
+            time.sleep(3)  # 等待聊天窗口加载
             # 等待聊天输入框元素加载完成，使用更稳定的属性选择器
             chat_input_selector = "xpath=//div[contains(@class, 'chat-input-')]"
             page.wait_for_selector(chat_input_selector, timeout=config["browserTimeout"])
