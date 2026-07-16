@@ -9,7 +9,7 @@ const app = createApp({
     const activePage = ref("deploy");
     const viewportWidth = ref(window.innerWidth);
     const isMobile = computed(() => viewportWidth.value < 768);
-    const showBaseConfig = ref(true);
+    const showBaseConfig = ref(false);
     const activeAccountIndex = ref(0);
 
     const match_mode_options = [
@@ -599,6 +599,10 @@ const app = createApp({
       window.open("https://github.com/settings/tokens/new?scopes=repo,workflow", "_blank");
     };
 
+    const switchPage = (page) => {
+      activePage.value = page;
+    };
+
     const toggleBaseConfig = () => {
       showBaseConfig.value = !showBaseConfig.value;
     };
@@ -697,6 +701,7 @@ const app = createApp({
       openEnvDetails,
       addAccount,
       removeAccount,
+      switchPage,
       toggleBaseConfig,
       switchAccount,
       setActiveAccount,

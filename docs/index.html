@@ -19,15 +19,23 @@
     <div id="app">
         <div class="app-shell">
             <div class="page-header">
-                <img src="./static/xiaobao-logo.jpg" alt="小宝专属续火花" class="logo" />
-                <span class="page-title">小宝专属续火花</span>
+                <div class="brand-lockup">
+                    <img src="./static/xiaobao-logo.jpg" alt="小宝专属续火花" class="logo" />
+                    <span class="page-title">小宝专属续火花</span>
+                </div>
+                <div class="page-switcher">
+                    <el-button size="small" :type="activePage === 'deploy' ? 'primary' : ''"
+                        :plain="activePage !== 'deploy'" @click="switchPage('deploy')">密钥</el-button>
+                    <el-button size="small" :type="activePage === 'env' ? 'primary' : ''"
+                        :plain="activePage !== 'env'" @click="switchPage('env')">参数</el-button>
+                </div>
             </div>
             <el-tabs v-model="activePage" stretch class="page-tabs">
-                <el-tab-pane label="GitHub 部署配置" name="deploy">
+                <el-tab-pane label="小宝填密钥哦" name="deploy">
                     <div class="page-panel deploy-page">
                         <div class="github-config-form panel-block">
                             <div class="section-header">
-                                <span class="text-large font-600">GitHub 部署配置</span>
+                                <span class="text-large font-600">小宝填密钥哦</span>
                             </div>
                             <el-form :model="githubForm" :label-position="isMobile ? 'top' : 'right'" label-width="auto" style="max-width: 600px">
                                 <el-form-item label="仓库所有者">
@@ -197,7 +205,7 @@
                         </div>
                     </div>
                 </el-tab-pane>
-                <el-tab-pane label="Environment Variables" name="env">
+                <el-tab-pane label="参数" name="env">
                     <div class="page-panel env-page">
                         <el-card id="environment-variables" class="env-card">
                             <template #header>
