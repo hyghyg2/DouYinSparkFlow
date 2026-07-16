@@ -9,6 +9,8 @@ const app = createApp({
     const activePage = ref("deploy");
     const viewportWidth = ref(window.innerWidth);
     const isMobile = computed(() => viewportWidth.value < 768);
+    const showBaseConfig = ref(true);
+    const activeAccountIndex = ref(0);
 
     const match_mode_options = [
       { id: "nickname", label: "昵称", value: "nickname" },
@@ -35,6 +37,7 @@ const app = createApp({
         {
           username: "user1",
           unique_id: "12345678905",
+          remark: "",
           cookies: "cookie1",
           targets: ["friend1", "friend2"],
         },
@@ -54,6 +57,37 @@ const app = createApp({
     const running = ref(false);
     const deployResult = ref("");
     const deployStatus = ref("success");
+
+    const createAccount = (overrides = {}) => ({
+      username: "",
+      unique_id: "",
+      remark: "",
+      cookies: "",
+      targets: [],
+      ...overrides,
+      targets: Array.isArray(overrides.targets) ? overrides.targets : [],
+    });
+
+    const normalizeAccount = (account = {}) => createAccount({
+      username: account.username || "",
+      unique_id: account.unique_id || "",
+      remark: account.remark || account.note || "",
+      cookies: account.cookies || "",
+      targets: Array.isArray(account.targets) ? account.targets : [],
+    });
+
+    const setAccounts = (accounts) => {
+      const nextAccounts = Array.isArray(accounts) && accounts.length > 0
+        ? accounts.map((account) => normalizeAccount(account))
+        : [createAccount()];
+      form.ACCOUNTS = nextAccounts;
+      if (activeAccountIndex.value >= nextAccounts.length) {
+        activeAccountIndex.value = nextAccounts.length - 1;
+      }
+      if (activeAccountIndex.value < 0) {
+        activeAccountIndex.value = 0;
+      }
+    };
 
     const handleResize = () => {
       viewportWidth.value = window.innerWidth;
@@ -80,6 +114,7 @@ const app = createApp({
         TASKS: form.ACCOUNTS.map((account) => ({
           username: account.username,
           unique_id: account.unique_id,
+          remark: account.remark || "",
           targets: account.targets,
         })),
       };
@@ -191,7 +226,7 @@ const app = createApp({
 
       const nextAccounts = Array.isArray(nextForm.ACCOUNTS) && nextForm.ACCOUNTS.length > 0
         ? nextForm.ACCOUNTS
-        : [{ username: "", unique_id: "", cookies: "", targets: [] }];
+        : [createAccount()];
 
       form.PROXY_ADDRESS = nextForm.PROXY_ADDRESS || "";
       form.MESSAGE_TEMPLATE = nextForm.MESSAGE_TEMPLATE || "";
@@ -201,12 +236,7 @@ const app = createApp({
       form.FRIEND_LIST_WAIT_TIME = Number(nextForm.FRIEND_LIST_WAIT_TIME) || 2000;
       form.TASK_RETRY_TIMES = Number(nextForm.TASK_RETRY_TIMES) || 3;
       form.LOG_LEVEL = nextForm.LOG_LEVEL || "Info";
-      form.ACCOUNTS = nextAccounts.map((account) => ({
-        username: account.username || "",
-        unique_id: account.unique_id || "",
-        cookies: account.cookies || "",
-        targets: Array.isArray(account.targets) ? account.targets : [],
-      }));
+      setAccounts(nextAccounts);
     }
 
     async function encryptCloudConfig(payload) {
@@ -420,15 +450,17 @@ const app = createApp({
             val = parseInt(val) || val;
           }
           if (v.name === "TASKS") {
-            form.ACCOUNTS = (val || []).map(t => {
+            const tasks = Array.isArray(val) ? val : [];
+            setAccounts(tasks.map(t => {
               const uid = t.unique_id || "";
               return {
                 username: t.username || "",
                 unique_id: uid,
+                remark: t.remark || t.note || "",
                 cookies: localStorage.getItem("cookies_" + uid) || cloudCookies[uid] || "",
                 targets: t.targets || [],
               };
-            });
+            }));
             continue;
           }
           if (v.name in form) form[v.name] = val;
@@ -567,6 +599,21 @@ const app = createApp({
       window.open("https://github.com/settings/tokens/new?scopes=repo,workflow", "_blank");
     };
 
+    const toggleBaseConfig = () => {
+      showBaseConfig.value = !showBaseConfig.value;
+    };
+
+    const switchAccount = () => {
+      if (form.ACCOUNTS.length <= 1) return;
+      activeAccountIndex.value = (activeAccountIndex.value + 1) % form.ACCOUNTS.length;
+    };
+
+    const setActiveAccount = (index) => {
+      if (index >= 0 && index < form.ACCOUNTS.length) {
+        activeAccountIndex.value = index;
+      }
+    };
+
     const copyValue = (value) => {
       if (typeof value === "object") {
         value = JSON.stringify(value);
@@ -611,12 +658,22 @@ const app = createApp({
     };
 
     const addAccount = () => {
-      form.ACCOUNTS.push({ username: "", unique_id: "", cookies: "", targets: [] });
+      form.ACCOUNTS.push(createAccount());
+      activeAccountIndex.value = form.ACCOUNTS.length - 1;
     };
 
-    const removeAccount = (index) => {
+    const removeAccount = (index = activeAccountIndex.value) => {
+      if (form.ACCOUNTS.length <= 1) return;
       form.ACCOUNTS.splice(index, 1);
+      if (activeAccountIndex.value > index) {
+        activeAccountIndex.value -= 1;
+      }
+      if (activeAccountIndex.value >= form.ACCOUNTS.length) {
+        activeAccountIndex.value = form.ACCOUNTS.length - 1;
+      }
     };
+
+    const activeAccount = computed(() => form.ACCOUNTS[activeAccountIndex.value] || form.ACCOUNTS[0] || null);
 
     return {
       match_mode_options,
@@ -624,6 +681,9 @@ const app = createApp({
       message,
       activePage,
       isMobile,
+      showBaseConfig,
+      activeAccountIndex,
+      activeAccount,
       form,
       githubForm,
       deploying,
@@ -637,6 +697,9 @@ const app = createApp({
       openEnvDetails,
       addAccount,
       removeAccount,
+      toggleBaseConfig,
+      switchAccount,
+      setActiveAccount,
       deployAndRun,
       saveCloudConfigOnly,
       loadFromGitHub,

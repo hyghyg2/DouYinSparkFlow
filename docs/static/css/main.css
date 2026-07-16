@@ -109,6 +109,46 @@ body {
     margin-bottom: 15px;
 }
 
+.section-header {
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.card-header {
+    justify-content: flex-start;
+}
+
+.section-header-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+}
+
+.section-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.section-header-actions .el-button {
+    margin: 0;
+}
+
+.account-count {
+    flex: 0 0 auto;
+    padding: 3px 8px;
+    border: 1px solid #dcdfe6;
+    border-radius: 999px;
+    color: #606266;
+    font-size: 12px;
+    line-height: 1.4;
+    background: #f5f7fa;
+}
+
 .account-item {
     margin-bottom: 16px;
     padding: 16px;
@@ -116,6 +156,58 @@ body {
     border-radius: 6px;
     background: #fafbfc;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+.account-single {
+    margin-bottom: 18px;
+}
+
+.account-switcher {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.account-switcher .el-button {
+    max-width: 180px;
+    margin: 0;
+}
+
+.account-switcher .el-button span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.account-item-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.account-item-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+}
+
+.account-index {
+    color: #303133;
+    font-weight: 600;
+}
+
+.account-preview {
+    min-width: 0;
+    color: #909399;
+    font-size: 13px;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .action-grid {
@@ -216,6 +308,20 @@ body {
         padding: 16px;
     }
 
+    .section-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .section-header-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .section-header-actions .el-button {
+        flex: 1 1 120px;
+    }
+
     .el-form,
     .el-form-item__content,
     .el-form-item__content > .el-input,
@@ -235,6 +341,25 @@ body {
     .config-item {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .account-switcher {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 2px;
+    }
+
+    .account-switcher .el-button {
+        flex: 0 0 auto;
+    }
+
+    .account-item-head {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .account-item-head .el-button {
+        width: 100%;
     }
 
     .item-actions {

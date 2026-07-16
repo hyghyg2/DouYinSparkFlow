@@ -56,9 +56,16 @@
                         </div>
                         <div class="base-config-form panel-block">
                             <div class="section-header">
-                                <span class="text-large font-600">基础配置</span>
+                                <div class="section-header-title">
+                                    <span class="text-large font-600">基础配置</span>
+                                </div>
+                                <div class="section-header-actions">
+                                    <el-button size="small" @click="toggleBaseConfig">
+                                        {{ showBaseConfig ? '隐藏' : '显示' }}
+                                    </el-button>
+                                </div>
                             </div>
-                            <el-form :model="form" :label-position="isMobile ? 'top' : 'right'" label-width="auto" style="max-width: 600px">
+                            <el-form v-show="showBaseConfig" :model="form" :label-position="isMobile ? 'top' : 'right'" label-width="auto" style="max-width: 600px">
                                 <el-form-item label="代理地址（暂未实现）">
                                     <el-input v-model="form.PROXY_ADDRESS" />
                                 </el-form-item>
@@ -102,21 +109,64 @@
                         </div>
                         <div class="account-config-form panel-block">
                             <div class="section-header">
-                                <span class="text-large font-600">账户配置</span>
+                                <div class="section-header-title">
+                                    <span class="text-large font-600">账户配置</span>
+                                    <span class="account-count">账号 {{ activeAccountIndex + 1 }} / {{ form.ACCOUNTS.length }}</span>
+                                </div>
+                                <div class="section-header-actions">
+                                    <el-button size="small" @click="switchAccount" :disabled="form.ACCOUNTS.length <= 1">
+                                        切换账号
+                                    </el-button>
+                                    <el-button size="small" type="primary" @click="addAccount">
+                                        <template #icon>
+                                            <i class="icon"><svg t="1775401233918" class="icon" viewBox="0 0 1024 1024"
+                                                    version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="16333"
+                                                    width="256" height="256">
+                                                    <path
+                                                        d="M105 480a8 8 0 0 1 8-8h799a8 8 0 0 1 8 8v64a8 8 0 0 1-8 8H113a8 8 0 0 1-8-8v-64z"
+                                                        fill="#ffffff" p-id="16334"></path>
+                                                    <path
+                                                        d="M480 920a8 8 0 0 1-8-8V112a8 8 0 0 1 8-8h64a8 8 0 0 1 8 8v800a8 8 0 0 1-8 8h-64z"
+                                                        fill="#ffffff" p-id="16335"></path>
+                                                </svg>
+                                            </i>
+                                        </template>
+                                        添加账号
+                                    </el-button>
+                                </div>
                             </div>
-                            <div class="account-item" v-for="(account, index) in form.ACCOUNTS" :key="index">
-                                <el-form :model="form" :label-position="isMobile ? 'top' : 'right'" label-width="auto" style="max-width: 600px">
+                            <div v-if="form.ACCOUNTS.length > 1" class="account-switcher">
+                                <el-button v-for="(account, index) in form.ACCOUNTS" :key="index" size="small"
+                                    :type="activeAccountIndex === index ? 'primary' : ''"
+                                    :plain="activeAccountIndex !== index"
+                                    @click="setActiveAccount(index)">
+                                    {{ account.remark || account.username || ('账号 ' + (index + 1)) }}
+                                </el-button>
+                            </div>
+                            <div class="account-item account-single" v-if="activeAccount">
+                                <div class="account-item-head">
+                                    <div class="account-item-title">
+                                        <span class="account-index">账号 {{ activeAccountIndex + 1 }}</span>
+                                        <span class="account-preview">{{ activeAccount.remark || '未填写备注' }}</span>
+                                    </div>
+                                    <el-button type="danger" size="small" :disabled="form.ACCOUNTS.length <= 1"
+                                        @click="removeAccount(activeAccountIndex)">移除当前账号</el-button>
+                                </div>
+                                <el-form :model="activeAccount" :label-position="isMobile ? 'top' : 'right'" label-width="auto" style="max-width: 600px">
+                                    <el-form-item label="备注">
+                                        <el-input v-model="activeAccount.remark" placeholder="例如：主号 / 备用号" />
+                                    </el-form-item>
                                     <el-form-item label="用户名">
-                                        <el-input v-model="account.username" />
+                                        <el-input v-model="activeAccount.username" />
                                     </el-form-item>
                                     <el-form-item label="抖音号">
-                                        <el-input v-model="account.unique_id" />
+                                        <el-input v-model="activeAccount.unique_id" />
                                     </el-form-item>
                                     <el-form-item label="Cookies【JSON格式】">
-                                        <el-input v-model="account.cookies" :rows="4" type="textarea" />
+                                        <el-input v-model="activeAccount.cookies" :rows="4" type="textarea" />
                                     </el-form-item>
                                     <el-form-item label="目标好友（回车）">
-                                        <el-input-tag v-model="account.targets" tag-type="info" tag-effect="plain"
+                                        <el-input-tag v-model="activeAccount.targets" tag-type="info" tag-effect="plain"
                                             placeholder="Please input">
                                             <template #tag="{ value }">
                                                 <div class="flex items-center">
@@ -125,9 +175,6 @@
                                             </template>
                                         </el-input-tag>
                                     </el-form-item>
-                                    <el-button type="danger"
-                                        :style="{ width: '100%', margin: '20px auto' , display: form.ACCOUNTS.length <= 1 ? 'none' : 'block'}"
-                                        @click="removeAccount(index)">移除</el-button>
                                 </el-form>
                             </div>
                             <div class="action-grid">
@@ -142,22 +189,6 @@
                                 </el-button>
                                 <el-button type="primary" @click="triggerRun" :loading="running">
                                     {{ running ? '触发运行中...' : '仅触发运行' }}
-                                </el-button>
-                                <el-button type="primary" @click="addAccount">
-                                    <template #icon>
-                                        <i class="icon"><svg t="1775401233918" class="icon" viewBox="0 0 1024 1024"
-                                                version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="16333"
-                                                width="256" height="256">
-                                                <path
-                                                    d="M105 480a8 8 0 0 1 8-8h799a8 8 0 0 1 8 8v64a8 8 0 0 1-8 8H113a8 8 0 0 1-8-8v-64z"
-                                                    fill="#ffffff" p-id="16334"></path>
-                                                <path
-                                                    d="M480 920a8 8 0 0 1-8-8V112a8 8 0 0 1 8-8h64a8 8 0 0 1 8 8v800a8 8 0 0 1-8 8h-64z"
-                                                    fill="#ffffff" p-id="16335"></path>
-                                            </svg>
-                                        </i>
-                                    </template>
-                                    添加账户
                                 </el-button>
                             </div>
                             <div class="action-result">
