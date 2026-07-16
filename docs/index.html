@@ -74,8 +74,8 @@
                                 </div>
                             </div>
                             <el-form v-show="showBaseConfig" :model="form" :label-position="isMobile ? 'top' : 'right'" label-width="auto" style="max-width: 600px">
-                                <el-form-item label="代理地址（暂未实现）">
-                                    <el-input v-model="form.PROXY_ADDRESS" />
+                                <el-form-item label="代理地址">
+                                    <el-input v-model="form.PROXY_ADDRESS" placeholder="愿小宝心想事成~" />
                                 </el-form-item>
                                 <el-form-item label="消息模板">
                                     <el-input v-model="form.MESSAGE_TEMPLATE" :rows="4" type="textarea" />
