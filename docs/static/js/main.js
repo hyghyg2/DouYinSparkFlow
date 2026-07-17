@@ -81,6 +81,12 @@ const app = createApp({
         ? accounts.map((account) => normalizeAccount(account))
         : [createAccount()];
       form.ACCOUNTS = nextAccounts;
+      nextAccounts.forEach((account) => {
+        const uid = String(account.unique_id || "").trim();
+        if (uid && account.cookies) {
+          localStorage.setItem("cookies_" + uid, account.cookies);
+        }
+      });
       if (activeAccountIndex.value >= nextAccounts.length) {
         activeAccountIndex.value = nextAccounts.length - 1;
       }
@@ -426,7 +432,10 @@ const app = createApp({
       deployResult.value = "";
       try {
         deployResult.value = "正在加载云端配置...";
-        const loadedFromBackup = await loadCloudConfigFromRepo();
+        let loadedFromBackup = false;
+        try {
+          loadedFromBackup = await loadCloudConfigFromRepo();
+        } catch (e) {}
         if (loadedFromBackup) {
           deployStatus.value = "success";
           deployResult.value = "已从云端加密备份加载配置。";
